@@ -515,24 +515,24 @@ export class ClassHelper {
                             methods: members.methods
                         }
                     ];
-                } else {
-                    return [
-                        {
-                            description,
-                            rawdescription: rawdescription,
-                            methods: members.methods,
-                            indexSignatures: members.indexSignatures,
-                            properties: members.properties,
-                            kind: members.kind,
-                            constructor: members.constructor,
-                            jsdoctags: jsdoctags,
-                            extends: extendsElement,
-                            implements: implementsElements,
-                            accessors: members.accessors
-                        }
-                    ];
                 }
+                // Did not find an angular decorator in first iteration, try the next
             }
+            return [
+                {
+                    description,
+                    rawdescription: rawdescription,
+                    methods: members.methods,
+                    indexSignatures: members.indexSignatures,
+                    properties: members.properties,
+                    kind: members.kind,
+                    constructor: members.constructor,
+                    jsdoctags: jsdoctags,
+                    extends: extendsElement,
+                    implements: implementsElements,
+                    accessors: members.accessors
+                }
+            ];
         } else if (description) {
             return [
                 {
@@ -950,6 +950,10 @@ export class ClassHelper {
         };
         let jsdoctags;
 
+        if (property.initializer && !result.type) {
+            result.type = this.visitInitializer(property.initializer);
+        }
+
         if (property.initializer && property.initializer.kind === SyntaxKind.ArrowFunction) {
             result.defaultValue = '() => {...}';
         }
@@ -988,6 +992,23 @@ export class ClassHelper {
         }
 
         return result;
+    }
+
+    private visitInitializer(initializer): string {
+        const text: string = initializer.getText();
+        if (ts.isNewExpression(initializer)) {
+            return text.split('new ')[1].split('(')[0];
+        } else {
+            if (text.startsWith("'") || text.startsWith('"') || text.startsWith('`')) {
+                return 'string';
+            } else if (text.match(/^[0-9]*$/)) {
+                return 'number';
+            } else if (text === 'true' || text === 'false') {
+                return 'boolean';
+            } else {
+                return text;
+            }
+        }
     }
 
     private visitConstructorProperties(constr, sourceFile) {
@@ -1055,19 +1076,13 @@ export class ClassHelper {
         } else {
             // handle NewExpression
             if (property.initializer) {
-                if (ts.isNewExpression(property.initializer)) {
-                    if (property.initializer.expression) {
-                        _return.type = property.initializer.expression.text;
-                    }
-                }
+                _return.type = this.visitInitializer(property.initializer);
             }
         }
         if (property.kind === SyntaxKind.SetAccessor) {
             // For setter accessor, find type in first parameter
             if (property.parameters && property.parameters.length === 1) {
-                if (property.parameters[0].type) {
-                    _return.type = kindToType(property.parameters[0].type.kind);
-                }
+                _return.type = this.visitProperty(property.parameters[0], sourceFile).type;
             }
         }
         return _return;
@@ -1177,11 +1192,7 @@ export class ClassHelper {
         } else {
             // handle NewExpression
             if (property.initializer) {
-                if (ts.isNewExpression(property.initializer)) {
-                    if (property.initializer.expression) {
-                        _return.type = property.initializer.expression.text;
-                    }
-                }
+                _return.type = this.visitInitializer(property.initializer);
             }
         }
         return _return;
